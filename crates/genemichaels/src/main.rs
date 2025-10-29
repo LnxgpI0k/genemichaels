@@ -62,6 +62,9 @@ struct Args {
     files: Vec<PathBuf>,
     /// Format stdin, writing formatted data to stdout.
     stdin: Option<()>,
+    /// Formats the input even if syntactically invalid in most cases, as in some macro
+    /// invocations.
+    tokens: Option<()>,
     /// Explicitly specify a config file path. If not specified, will look for
     /// `.genemichaels.json` next to the `Config.toml` if formatting a project or in
     /// the current directory otherwise. See the readme for options.
@@ -187,6 +190,9 @@ fn main() {
             // No config, use default settings
             break Default::default();
         };
+        if args.stdin.is_none() && args.tokens.is_some() {
+            return Err(log.err("If you use tokens flag stdin must be used"));
+        }
         if args.stdin.is_some() {
             if !args.files.is_empty() {
                 return Err(
@@ -204,8 +210,27 @@ fn main() {
                     print!("{}", source);
                     return Ok(());
                 } else {
+                    let mut preserving_trailing_newline = false;
+                    let source = if args.tokens.is_some() {
+                        preserving_trailing_newline = source.ends_with('\n');
+                        format!["genemichaels!{{\n{source}\n}}"]
+                    } else {
+                        source
+                    };
                     let out = process_file_contents(log, &config, &source)?;
-                    print!("{}", out);
+                    let out = if args.tokens.is_some() {
+                        let start = out.find('{').unwrap() + 1;
+                        let end = out.rfind('}').unwrap();
+                        let body = &out[start .. end];
+                        body.trim_start_matches('\n').trim_end().to_owned()
+                    } else {
+                        out
+                    };
+                    print!("{}{}", out, if preserving_trailing_newline {
+                        "\n"
+                    } else {
+                        ""
+                    });
                     return Ok(());
                 }
             }().stack_context(log, "Error formatting stdin")?;
@@ -298,8 +323,8 @@ fn main() {
                                 continue;
                             }
 
-                            // NOTE: glob::glob takes a &str instead of a path. May cause problems in the future on
-                            // systems with non-UTF-8 paths, such as Linux.
+                            // NOTE: glob::glob takes a &str instead of a path. May cause problems in the
+                            // future on systems with non-UTF-8 paths, such as Linux.
                             if member.to_str().is_none() {
                                 eprintln!(
                                     "Crate or workspace member path is not UTF-8, some members may fail to format."
