@@ -31,6 +31,7 @@ use {
             PathBuf,
         },
         process,
+        str::pattern::Pattern,
         sync::{
             Arc,
             Mutex,
@@ -211,7 +212,11 @@ fn main() {
                     return Ok(());
                 } else {
                     let mut preserving_trailing_newline = false;
+                    let mut indent = String::new();
                     let source = if args.tokens.is_some() {
+                        indent = source.chars().skip_while(|c| *c == '\n')
+                            // We don't care what the indentation is, we just need to replicate it
+                            .take_while(|c| *c == ' ' || *c == '\t').collect::<String>();
                         preserving_trailing_newline = source.ends_with('\n');
                         format!["genemichaels!{{\n{source}\n}}"]
                     } else {
@@ -222,7 +227,15 @@ fn main() {
                         let start = out.find('{').unwrap() + 1;
                         let end = out.rfind('}').unwrap();
                         let body = &out[start .. end];
-                        body.trim_start_matches('\n').trim_end().to_owned()
+                        let indented = body.trim_start_matches('\n').trim_end().to_owned();
+
+                        // Get first level indent of first line
+                        let naive_indent = indented.chars().take_while(|c| *c == ' ' || *c == '\t').collect::<String>();
+                        let body = indented.split('\n').map(|line| {
+                            // Add user-selected indent to every line while stripping naive first-level indent
+                            format!["{}{}", indent, line.strip_prefix(&naive_indent).unwrap_or(line)]
+                        }).collect::<Vec<String>>();
+                        body.join("\n")
                     } else {
                         out
                     };
